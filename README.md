@@ -1,2 +1,2 @@
-# playground
-Playground for everything
+# TesnorFlow Playground
+Playground for trying out TensorFlow
