@@ -20,10 +20,10 @@ def test_tf_where():
         # t_results = tf.map_fn(switch_ops, (ph_flags, ph_words))
 
         def opt_one(val):
-            return tf.add(val, 10)
+            return tf.add(val, 100)
 
         def opt_two(val):
-            return tf.multiply(val, 1000)
+            return tf.multiply(val, 100000)
 
         # flags_list = tf.unstack(flags)
         # word_list = tf.unstack(words)
