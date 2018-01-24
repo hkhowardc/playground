@@ -47,7 +47,7 @@ def get_iris_as_jsonlines_file():
     return iris_jsonl_path
 
 
-def create_iris_train_test_datafiles(split=0.8, shuffle=True):
+def create_iris_train_test_jsonl_files(split=0.8, shuffle=True):
     all_iris_jsons = get_iris_as_jsons()
 
     split_at = int(len(all_iris_jsons) * split)
