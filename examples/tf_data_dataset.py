@@ -12,21 +12,30 @@ def try_dataset_from_generator_repeated():
 
     def _gen_samples():
         for i in range(sample_count):
-            yield {
+            yield ({
                 "+ve": i,
                 "-ve": i * -1,
-            }
+            }, {
+                "a": i,
+                "b": i * -1,
+            })
 
     ds = tf.data.Dataset.from_generator(
         generator=_gen_samples,
-        output_types={
+        output_types=({
             "+ve": tf.int64,
             "-ve": tf.int64
-        },
-        output_shapes={
-            "+ve": tf.TensorShape([]),
-            "-ve": tf.TensorShape([])
-        })
+        }, {
+            "a": tf.int64,
+            "b": tf.int64
+        }),
+        output_shapes=({
+            "a": tf.TensorShape([]),
+            "b": tf.TensorShape([])
+        }, {
+            "a": tf.TensorShape([]),
+            "b": tf.TensorShape([])
+        }))
     ds = ds.repeat(repeat_times)
     next = ds.make_one_shot_iterator().get_next()
 
@@ -94,7 +103,8 @@ def try_dataset_from_generator_repeated_in_batches():
     repeat_times = 3
     batch_size = 32
     shuffle_data = True
-    queue_size = batch_size * 100
+    # `queue_size` set to smaller than `batch_size` and `sample_count` on purpose
+    queue_size = 28
 
     def _gen_samples():
         for i in range(sample_count):
@@ -239,7 +249,8 @@ def try_dataset_from_file_generator_repeated_in_batches():
     repeat_times = 5
     batch_size = 16
     shuffle_data = True
-    queue_size = batch_size * 100
+    # `queue_size` is less than `sample_count`
+    queue_size = 78
 
     import tempfile
     _, data_path = tempfile.mkstemp("1.csv", text=True)
@@ -297,8 +308,8 @@ def try_dataset_from_file_generator_repeated_in_batches():
 
 
 if __name__ == '__main__':
-    # try_dataset_from_generator_repeated()
+    try_dataset_from_generator_repeated()
     # try_dataset_from_generator_repeated_with_shard()
     # try_dataset_from_generator_repeated_in_batches()
-    try_dataset_from_multiple_file_generators()
+    # try_dataset_from_multiple_file_generators()
     # try_dataset_from_file_generator_repeated_in_batches()
