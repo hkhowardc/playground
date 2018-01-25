@@ -3,10 +3,9 @@ import math
 import sys
 from functools import partial
 
-import jsonlines
 import tensorflow as tf
 
-from iris import create_iris_train_test_jsonl_files
+from iris import create_iris_train_test_csv_files, species_name_to_int
 
 logger = logging.getLogger(__name__)
 
@@ -40,27 +39,55 @@ LABELS_SHAPES = {
 }
 
 
-def iris_jsonl_input_fn(jsonl_file_path, mini_batch_size, num_epochs,
-                        shuffle=True, shuffle_buffer=1024):
+def iris_csv_input_fn(csv_file_path, mini_batch_size, num_epochs,
+                      shuffle=True, shuffle_buffer=1024):
 
-    def _gen_features_and_labels_from_file():
-        with jsonlines.open(jsonl_file_path, mode="r") as f:
-            for sample_dict in f:
-                features = {
-                    FEATURES_SEPAL_LENGTH: sample_dict[FEATURES_SEPAL_LENGTH],
-                    FEATURES_SEPAL_WIDTH: sample_dict[FEATURES_SEPAL_WIDTH],
-                    FEATURES_PETAL_LENGTH: sample_dict[FEATURES_PETAL_LENGTH],
-                    FEATURES_PETAL_WIDTH: sample_dict[FEATURES_PETAL_WIDTH],
-                }
+    def _map_species(text_from_str_tensor):
+        # text_from_str_tensor is an binary string, decoding needed here
+        unicode_text = str(text_from_str_tensor, encoding="utf-8")
 
-                labels = {
-                    LABELS_SPECIES: sample_dict[LABELS_SPECIES],
-                }
-                yield (features, labels)
+        return species_name_to_int(unicode_text)
 
-    ds = tf.data.Dataset.from_generator(generator=_gen_features_and_labels_from_file,
-                                        output_types=(FEATURES_TYPES, LABELS_TYPES),
-                                        output_shapes=(FEATURES_SHAPES, LABELS_SHAPES))
+    def _map_features_and_labels(csv_line):
+
+        # Got the below error message:
+        # ValueError: Cannot use the default session to execute operation: the operation's graph
+        # is different from the session's graph. Pass an explicit session to run(session=sess).
+        #
+        # species = tf.constant(["Iris-setosa", "Iris-versicolor", "Iris-virginica"],
+        #                       dtype=tf.string,
+        #                       name="available_species")
+        #
+        # table = tf.contrib.lookup.index_table_from_tensor(mapping=species,
+        #                                                     num_oov_buckets=0,
+        #                                                     default_value=-1,
+        #                                                     name="species_mapping")
+        #
+        # table.init.run()
+
+        csv_columns_defaults = ([-0.1], [-0.1], [-0.1], [-0.1], [""])
+        column_tensors = tf.decode_csv(records=csv_line, record_defaults=csv_columns_defaults)
+
+        features = {
+            FEATURES_SEPAL_LENGTH: column_tensors[0],
+            FEATURES_SEPAL_WIDTH: column_tensors[1],
+            FEATURES_PETAL_LENGTH: column_tensors[2],
+            FEATURES_PETAL_WIDTH: column_tensors[3],
+        }
+
+        labels = {
+            # LABELS_SPECIES: table.lookup(column_tensors[4]),
+
+            # Have to use tf.py_func() inside a `map_func` (which is inside an `input_fn`)
+            # to implement complex data preprocessing logic if we loads CSV
+            # using tf.data.TextLineDataset
+            LABELS_SPECIES: tf.py_func(_map_species, inp=[column_tensors[4]], Tout=(tf.int64)),
+        }
+
+        return features, labels
+
+    ds = tf.data.TextLineDataset(csv_file_path)
+    ds = ds.map(map_func=_map_features_and_labels)
 
     ds = ds.repeat(num_epochs)
     if shuffle:
@@ -148,10 +175,10 @@ def model_fn(features, labels, mode, params, config):
 def train_and_test_simple_estimator(num_epochs, model_dir):
     mini_batch_size = 16
 
-    train_path, test_path = create_iris_train_test_jsonl_files()
+    train_path, test_path = create_iris_train_test_csv_files()
 
-    train_input_fn = partial(iris_jsonl_input_fn,
-                             jsonl_file_path=train_path,
+    train_input_fn = partial(iris_csv_input_fn,
+                             csv_file_path=train_path,
                              mini_batch_size=mini_batch_size,
                              num_epochs=num_epochs,
                              shuffle=True,
@@ -169,11 +196,20 @@ def train_and_test_simple_estimator(num_epochs, model_dir):
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=dict())
     estimator.train(input_fn=train_input_fn)
 
-    test_input_fn = partial(iris_jsonl_input_fn,
-                            jsonl_file_path=test_path,
+    test_input_fn = partial(iris_csv_input_fn,
+                            csv_file_path=test_path,
                             mini_batch_size=mini_batch_size,
                             num_epochs=1,
                             shuffle=False)
+
+    # with tf.Session() as sess:
+    #     while True:
+    #         try:
+    #             feature, labels = test_input_fn()
+    #             result = sess.run([feature, labels])
+    #             print("result: %s" % result)
+    #         except tf.errors.OutOfRangeError:
+    #             break
 
     test_result = estimator.evaluate(input_fn=test_input_fn)
     print("test_result: %s" % test_result)
@@ -182,17 +218,17 @@ def train_and_test_simple_estimator(num_epochs, model_dir):
 def train_and_test_learn_runner(num_epochs, model_dir):
     mini_batch_size = 16
 
-    train_path, test_path = create_iris_train_test_jsonl_files()
+    train_path, test_path = create_iris_train_test_csv_files()
 
-    train_input_fn = partial(iris_jsonl_input_fn,
-                             jsonl_file_path=train_path,
+    train_input_fn = partial(iris_csv_input_fn,
+                             csv_file_path=train_path,
                              mini_batch_size=mini_batch_size,
                              num_epochs=num_epochs,
                              shuffle=True,
                              shuffle_buffer=mini_batch_size * 100)
 
-    test_input_fn = partial(iris_jsonl_input_fn,
-                            jsonl_file_path=test_path,
+    test_input_fn = partial(iris_csv_input_fn,
+                            csv_file_path=test_path,
                             mini_batch_size=mini_batch_size,
                             num_epochs=1,
                             shuffle=False)
@@ -261,7 +297,7 @@ if __name__ == '__main__':
 
     from datetime import datetime
     ts = datetime.now().strftime('%Y%m%d_%H%M')
-    model_dir = "./model_iris_using_dataset/" + ts
+    model_dir = "./models/iris_csv_text_line_dataset/" + ts
 
     # train_and_test_simple_estimator(num_epochs=50, model_dir=model_dir)
     train_and_test_learn_runner(num_epochs=50, model_dir=model_dir)
