@@ -24,11 +24,16 @@ def try_bucket_by_sequence_length_with_estimator():
 
         seq_tensor = ds.make_one_shot_iterator().get_next()
 
+        t_batch_size = tf.get_variable(name="mini_batch_size",
+                                       dtype=tf.int32,
+                                       initializer=mini_batch_size,
+                                       trainable=False)
+
         # `dynamic_pad` must be True if the input `tensors` is variable-length tensors
         bucketed = tf.contrib.training.bucket_by_sequence_length(
             input_length=tf.shape(seq_tensor)[-1],
             tensors=[seq_tensor],
-            batch_size=mini_batch_size,
+            batch_size=t_batch_size,
             bucket_boundaries=[4, 7],
             dynamic_pad=True)
 
@@ -50,6 +55,9 @@ def try_bucket_by_sequence_length_with_estimator():
 
         x = features["x"]
         x_seq_len = features["x_seq_len"]
+
+        print("x: %s" % x)
+        print("x_seq_len: %s" % x_seq_len)
 
         # Predictions
         dummy_predictions = {
@@ -89,7 +97,8 @@ def try_bucket_by_sequence_length_with_estimator():
             eval_metric_ops=eval_metric_ops,
         )
 
-    train_input_fn = partial(input_fn, mini_batch_size=32, num_epochs=1000, shuffle=False)
+    train_input_fn = partial(input_fn, mini_batch_size=32, num_epochs=10, shuffle=False)
+    train_input_fn_2 = partial(input_fn, mini_batch_size=16, num_epochs=10, shuffle=False)
     test_input_fn = partial(input_fn, mini_batch_size=32, num_epochs=1, shuffle=False)
 
     from datetime import datetime
@@ -97,7 +106,12 @@ def try_bucket_by_sequence_length_with_estimator():
     model_dir = "./models/iris_csv_text_line_dataset/" + ts
 
     estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=dict())
+
     estimator.train(input_fn=train_input_fn)
+    print("1st training with batch size 32 completed")
+
+    estimator.train(input_fn=train_input_fn_2)
+    print("2nd training with batch size 16 completed")
 
     test_result = estimator.evaluate(input_fn=test_input_fn)
     print("test_result: %s" % test_result)
