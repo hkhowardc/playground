@@ -92,7 +92,7 @@ def input_fn(mini_batch_size, num_epochs, shuffle=True, shuffle_buffer=1024):
         input_length=tf.shape(num_seq)[-1],
         tensors=[curve_type, num_seq],
         batch_size=t_batch_size,
-        # buckets: 70-80, 80-90, 90-100
+        # buckets: 70-80, 81-90, 91-100
         bucket_boundaries=[81, 91],
         dynamic_pad=True)
 
