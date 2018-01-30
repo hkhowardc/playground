@@ -3,6 +3,7 @@ import math
 import sys
 from functools import partial
 
+import numpy as np
 import tensorflow as tf
 
 from iris import create_iris_train_test_csv_files, species_name_to_int
@@ -16,28 +17,6 @@ FEATURES_PETAL_WIDTH = "Petal Width"
 
 LABELS_SPECIES = "Species"
 
-FEATURES_TYPES = {
-    FEATURES_SEPAL_LENGTH: tf.float32,
-    FEATURES_SEPAL_WIDTH: tf.float32,
-    FEATURES_PETAL_LENGTH: tf.float32,
-    FEATURES_PETAL_WIDTH: tf.float32,
-}
-
-LABELS_TYPES = {
-    LABELS_SPECIES: tf.int64,
-}
-
-FEATURES_SHAPES = {
-    FEATURES_SEPAL_LENGTH: tf.TensorShape([]),
-    FEATURES_SEPAL_WIDTH: tf.TensorShape([]),
-    FEATURES_PETAL_LENGTH: tf.TensorShape([]),
-    FEATURES_PETAL_WIDTH: tf.TensorShape([]),
-}
-
-LABELS_SHAPES = {
-    LABELS_SPECIES: tf.TensorShape([]),
-}
-
 
 def iris_csv_input_fn(csv_file_path, mini_batch_size, num_epochs,
                       shuffle=True, shuffle_buffer=1024):
@@ -46,7 +25,7 @@ def iris_csv_input_fn(csv_file_path, mini_batch_size, num_epochs,
         # text_from_str_tensor is an binary string, decoding needed here
         unicode_text = str(text_from_str_tensor, encoding="utf-8")
 
-        return species_name_to_int(unicode_text)
+        return np.int32(species_name_to_int(unicode_text))
 
     def _map_features_and_labels(csv_line):
 
@@ -75,13 +54,16 @@ def iris_csv_input_fn(csv_file_path, mini_batch_size, num_epochs,
             FEATURES_PETAL_WIDTH: column_tensors[3],
         }
 
-        labels = {
-            # LABELS_SPECIES: table.lookup(column_tensors[4]),
+        # Have to use tf.py_func() inside a `map_func` (which is inside an `input_fn`)
+        # to implement complex data preprocessing logic if we loads CSV
+        # using tf.data.TextLineDataset
+        species_as_int = tf.py_func(_map_species, inp=[column_tensors[4]], Tout=tf.int32)
 
-            # Have to use tf.py_func() inside a `map_func` (which is inside an `input_fn`)
-            # to implement complex data preprocessing logic if we loads CSV
-            # using tf.data.TextLineDataset
-            LABELS_SPECIES: tf.py_func(_map_species, inp=[column_tensors[4]], Tout=(tf.int64)),
+        # a trick here as `tf.py_func()` is unable to determine the shapes of its return values
+        species_as_int.set_shape(tf.TensorShape([]))
+
+        labels = {
+            LABELS_SPECIES: species_as_int,
         }
 
         return features, labels

@@ -1,9 +1,10 @@
+import json
 import logging
 import math
 import sys
 from functools import partial
 
-import jsonlines
+import numpy as np
 import tensorflow as tf
 
 from iris import create_iris_train_test_jsonl_files, species_name_to_int
@@ -17,50 +18,56 @@ FEATURES_PETAL_WIDTH = "Petal Width"
 
 LABELS_SPECIES = "Species"
 
-FEATURES_TYPES = {
-    FEATURES_SEPAL_LENGTH: tf.float32,
-    FEATURES_SEPAL_WIDTH: tf.float32,
-    FEATURES_PETAL_LENGTH: tf.float32,
-    FEATURES_PETAL_WIDTH: tf.float32,
-}
-
-LABELS_TYPES = {
-    LABELS_SPECIES: tf.int64,
-}
-
-FEATURES_SHAPES = {
-    FEATURES_SEPAL_LENGTH: tf.TensorShape([]),
-    FEATURES_SEPAL_WIDTH: tf.TensorShape([]),
-    FEATURES_PETAL_LENGTH: tf.TensorShape([]),
-    FEATURES_PETAL_WIDTH: tf.TensorShape([]),
-}
-
-LABELS_SHAPES = {
-    LABELS_SPECIES: tf.TensorShape([]),
-}
-
 
 def iris_jsonl_input_fn(jsonl_file_path, mini_batch_size, num_epochs,
                         shuffle=True, shuffle_buffer=1024):
 
-    def _gen_features_and_labels_from_file():
-        with jsonlines.open(jsonl_file_path, mode="r") as f:
-            for sample_dict in f:
-                features = {
-                    FEATURES_SEPAL_LENGTH: sample_dict[FEATURES_SEPAL_LENGTH],
-                    FEATURES_SEPAL_WIDTH: sample_dict[FEATURES_SEPAL_WIDTH],
-                    FEATURES_PETAL_LENGTH: sample_dict[FEATURES_PETAL_LENGTH],
-                    FEATURES_PETAL_WIDTH: sample_dict[FEATURES_PETAL_WIDTH],
-                }
+    def _parse_jsonline(jsonline_from_str_tensor):
+        # text_from_str_tensor is an binary string, decoding needed here
+        jsonl_unicode = str(jsonline_from_str_tensor, encoding="utf-8")
 
-                labels = {
-                    LABELS_SPECIES: species_name_to_int(sample_dict[LABELS_SPECIES]),
-                }
-                yield (features, labels)
+        sample_dict = json.loads(jsonl_unicode, encoding="utf-8")
 
-    ds = tf.data.Dataset.from_generator(generator=_gen_features_and_labels_from_file,
-                                        output_types=(FEATURES_TYPES, LABELS_TYPES),
-                                        output_shapes=(FEATURES_SHAPES, LABELS_SHAPES))
+        jsonline_as_items = [None] * 5
+        jsonline_as_items[0] = np.float32(sample_dict[FEATURES_SEPAL_LENGTH])
+        jsonline_as_items[1] = np.float32(sample_dict[FEATURES_SEPAL_WIDTH])
+        jsonline_as_items[2] = np.float32(sample_dict[FEATURES_PETAL_LENGTH])
+        jsonline_as_items[3] = np.float32(sample_dict[FEATURES_PETAL_WIDTH])
+        jsonline_as_items[4] = np.int32(species_name_to_int(sample_dict[LABELS_SPECIES]))
+
+        return tuple(jsonline_as_items)
+
+    def _map_features_and_labels(text_line_tensor):
+
+        # Have to use tf.py_func() inside a `map_func` (which is inside an `input_fn`)
+        # to convert one jsonlines (which comes from tf.data.TextLineDataset) into list of values.
+        # `tf.py_func()` does not support `dict` for now
+        json_values = tf.py_func(_parse_jsonline,
+                                 inp=[text_line_tensor],
+                                 Tout=(tf.float32, tf.float32, tf.float32, tf.float32, tf.int32))
+
+        # a trick here as `tf.py_func()` is unable to determine the shapes of its return values
+        json_values[0].set_shape(tf.TensorShape([]))
+        json_values[1].set_shape(tf.TensorShape([]))
+        json_values[2].set_shape(tf.TensorShape([]))
+        json_values[3].set_shape(tf.TensorShape([]))
+        json_values[4].set_shape(tf.TensorShape([]))
+
+        features = {
+            FEATURES_SEPAL_LENGTH: json_values[0],
+            FEATURES_SEPAL_WIDTH: json_values[1],
+            FEATURES_PETAL_LENGTH: json_values[2],
+            FEATURES_PETAL_WIDTH: json_values[3],
+        }
+
+        labels = {
+            LABELS_SPECIES: json_values[4],
+        }
+
+        return features, labels
+
+    ds = tf.data.TextLineDataset(jsonl_file_path)
+    ds = ds.map(map_func=_map_features_and_labels)
 
     ds = ds.repeat(num_epochs)
     if shuffle:
@@ -175,6 +182,15 @@ def train_and_test_simple_estimator(num_epochs, model_dir):
                             num_epochs=1,
                             shuffle=False)
 
+    # with tf.Session() as sess:
+    #     while True:
+    #         try:
+    #             feature, labels = test_input_fn()
+    #             result = sess.run([feature, labels])
+    #             print("result: %s" % result)
+    #         except tf.errors.OutOfRangeError:
+    #             break
+
     test_result = estimator.evaluate(input_fn=test_input_fn)
     print("test_result: %s" % test_result)
 
@@ -261,7 +277,7 @@ if __name__ == '__main__':
 
     from datetime import datetime
     ts = datetime.now().strftime('%Y%m%d_%H%M')
-    model_dir = "./models/iris_jsonl_dataset/" + ts
+    model_dir = "./models/iris_jsonl_text_line_dataset/" + ts
 
     # train_and_test_simple_estimator(num_epochs=50, model_dir=model_dir)
     train_and_test_learn_runner(num_epochs=50, model_dir=model_dir)

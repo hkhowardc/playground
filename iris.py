@@ -24,13 +24,13 @@ def load_iris_csv_lines_from_uci():
 def get_iris_as_jsons():
 
     def _iris_line_to_dict(l):
-        items = l.split(',')
+        columns = l.split(',')
         map = dict()
-        for idx, i in enumerate(items):
-            if idx != len(items) - 1:
-                map[IRIS_COLUMNS[idx]] = i
+        for idx, col_value in enumerate(columns):
+            if idx != len(columns) - 1:
+                map[IRIS_COLUMNS[idx]] = float(col_value)
             else:
-                map[IRIS_COLUMNS[idx]] = species_name_to_int(i)
+                map[IRIS_COLUMNS[idx]] = col_value
 
         return map
 
@@ -40,15 +40,15 @@ def get_iris_as_jsons():
     return all_iris_jsons
 
 
-def get_iris_as_jsonlines_file():
-    all_iris_jsons = get_iris_as_jsons()
-
-    _, iris_jsonl_path = tempfile.mkstemp("iris.json", text=True)
-    with jsonlines.open(iris_jsonl_path, mode="w") as f:
-        for j in all_iris_jsons:
-            f.write(j)
-
-    return iris_jsonl_path
+# def get_iris_as_jsonlines_file():
+#     all_iris_jsons = get_iris_as_jsons()
+#
+#     _, iris_jsonl_path = tempfile.mkstemp("iris.json", text=True)
+#     with jsonlines.open(iris_jsonl_path, mode="w") as f:
+#         for j in all_iris_jsons:
+#             f.write(j)
+#
+#     return iris_jsonl_path
 
 
 def create_iris_train_test_jsonl_files(split=0.8, shuffle=True):
